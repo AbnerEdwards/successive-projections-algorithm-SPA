@@ -1,37 +1,315 @@
-# 连续投影算法SPA
+# 连续投影算法 - SPA python版
 
-#### 介绍
-连续投影算法（successive projections algorithm， SPA） 是前向特征变量选择方法。SPA利用向量的投影分析，通过将波长投影到其他波长上，比较投影向量大小，以投影向量最大的波长为待选波长，然后基于矫正模型选择最终的特征波长。SPA选择的是含有最少冗余信息及最小共线性的变量组合。
+[TOC]
 
-#### 软件架构
-软件架构说明
+连续投影算法大量用于光谱特征波长选择中，翻遍全网，SPA算法只找到了MATLAB版本，
+
+## 原理
+
+连续投影算法（successive projections algorithm， SPA） 是前向特征变量选择方法。SPA利用向量的投影分析，通过将波长投影到其他波长上，比较投影向量大小，以投影向量最大的波长为待选波长，然后基于矫正模型选择最终的特征波长。SPA选择的是含有最少冗余信息及最小共线性的变量组合。该算法简要步骤如下。
+
+记初始迭代向量为 $x_{k(0)}$，需要提取的变量个数为$N$,光谱矩阵为$J$列。
+
+1. 任选光谱矩阵的1列（第$j$列），把建模集的第$j$列赋值给$x_j$，记为 $x_{k(0)}$。
+
+2. 将未选入的列向量位置的集合记为$s$,
+   $$
+   s=\lbrace j,1\leq{j}\leq{J}, j\notin \lbrace k(0), \cdots, k(n-1) \rbrace \rbrace
+   $$
+
+3. 分别计算$x_j$对剩余列向量的投影：
+   $$
+   P_{x_j} = x_j-(x^T_j x_{k(n-1)})x_{k(n-1)}(x^T_{k(n-1)}x_{k(n-1)})^{-1},j\in s
+   $$
+
+4. 提取最大投影向量的光谱波长，
+   $$
+   k(n) = arg(max(\| P_(x_j) \|), j \in s)
+   $$
+
+5. 令$x_j = p_x, j \in s$。
+
+6. $n = n + 1$，如果$n < N$,则按公式（1）循环计算。
+
+最后，提取出的变量为$\lbrace x_{k(n)} = 0, \cdots, N-1 \rbrace$。对应每一次循环中的$k(0)$和$N$，分别建立多元线性回归分析（MLR）模型，得到建模集交互验证均方根误差（RMSECV），对应不同的候选子集，其中最小的RMSECV值对应的$k(0)$和$N$就是最优值。一般SPA选择的特征波长分数$N$不能很大。
+
+​                                                              -------------------------摘自《光谱及成像技术在农业中的应用》P130
+
+## 代码
+
+`````python
+# !/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+# @Time    : 2020/9/20 
+# @Author  : my_name_is_BUG
+# @FileName: SPA.py
+# @Software: PyCharm
+# @Cnblogs ：https://blog.csdn.net/qq2512446791
+
+# python: Python 3.7.3
+# pandas: pandas 0.25.3
+# numpy : numpy  1.16.2
+# scipy : scipy  1.4.1
+
+import pandas as pd
+import numpy as np
+from scipy.linalg import qr, inv, pinv
+import scipy.stats
+import scipy.io as scio
+from progress.bar import Bar
+from matplotlib import pyplot as plt
 
 
-#### 安装教程
+class SPA:
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+    def _projections_qr(self, X, k, M):
+        '''
+        原版连续投影算法使用MATLAB内置的QR函数
+        该版本改用scipy.linalg.qr函数
+            https://docs.scipy.org/doc/scipy-0.14.0/reference/generated/scipy.linalg.qr.html
+        X : 预测变量矩阵
+        K ：投影操作的初始列的索引
+        M : 结果包含的变量个数
 
-#### 使用说明
+        return ：由投影操作生成的变量集的索引
+        '''
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+        X_projected = X.copy()
 
-#### 参与贡献
+        # 计算列向量的平方和
+        norms = np.sum((X ** 2), axis=0)
+        # 找到norms中数值最大列的平方和
+        norm_max = np.amax(norms)
 
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
+        # 缩放第K列 使其成为“最大的”列
+        X_projected[:, k] = X_projected[:, k] * 2 * norm_max / norms[k]
+
+        # 矩阵分割 ，order 为列交换索引
+        _, __, order = qr(X_projected, 0, pivoting=True)
+
+        return order[:M].T
+
+    def _validation(self, Xcal, ycal, var_sel, Xval=None, yval=None):
+        '''
+        [yhat,e] = validation(Xcal,var_sel,ycal,Xval,yval) -->  使用单独的验证集进行验证
+        [yhat,e] = validation(Xcal,ycalvar_sel) --> 交叉验证
+        '''
+        N = Xcal.shape[0]  # N 测试集的个数
+        if Xval is None:  # 判断是否使用验证集
+            NV = 0
+        else:
+            NV = Xval.shape[0]  # NV 验证集的个数
+
+        yhat = e = None
+
+        # 使用单独的验证集进行验证
+        if NV > 0:
+            Xcal_ones = np.hstack(
+                [np.ones((N, 1)), Xcal[:, var_sel].reshape(N, -1)])
+
+            # 对偏移量进行多元线性回归
+            b = np.linalg.lstsq(Xcal_ones, ycal, rcond=None)[0]
+            # 对验证集进行预测
+            np_ones = np.ones((NV, 1))
+            Xval_ = Xval[:, var_sel]
+            X = np.hstack([np.ones((NV, 1)), Xval[:, var_sel]])
+            yhat = X.dot(b)
+            # 计算误差
+            e = yval - yhat
+        else:
+            # 为yhat 设置适当大小
+            yhat = np.zeros((N, 1))
+            for i in range(N):
+                # 从测试集中 去除掉第 i 项
+                cal = np.hstack([np.arange(i), np.arange(i + 1, N)])
+                X = Xcal[cal, var_sel.astype(np.int)]
+                y = ycal[cal]
+                xtest = Xcal[i, var_sel]
+                # ytest = ycal[i]
+                X_ones = np.hstack([np.ones((N - 1, 1)), X.reshape(N - 1, -1)])
+                # 对偏移量进行多元线性回归
+                b = np.linalg.lstsq(X_ones, y, rcond=None)[0]
+                # 对验证集进行预测
+                yhat[i] = np.hstack([np.ones(1), xtest]).dot(b)
+            # 计算误差
+            e = ycal - yhat
+
+        return yhat, e
+
+    def spa(self, Xcal, ycal, m_min=1, m_max=None, Xval=None, yval=None, autoscaling=1):
+        '''
+        [var_sel,var_sel_phase2] = spa(Xcal,ycal,m_min,m_max,Xval,yval,autoscaling) --> 使用单独的验证集进行验证
+        [var_sel,var_sel_phase2] = spa(Xcal,ycal,m_min,m_max,autoscaling) --> 交叉验证
+
+        如果 m_min 为空时， 默认 m_min = 1
+        如果 m_max 为空时：
+            1. 当使用单独的验证集进行验证时， m_max = min(N-1, K)
+            2. 当使用交叉验证时，m_max = min(N-2, K)
+
+        autoscaling : 是否使用自动刻度 yes = 1，no = 0, 默认为 1
+
+        '''
+
+        assert (autoscaling == 0 or autoscaling == 1), "请选择是否使用自动计算"
+
+        N, K = Xcal.shape
+
+        if m_max is None:
+            if Xval is None:
+                m_max = min(N - 1, K)
+            else:
+                m_max = min(N - 2, K)
+
+        assert (m_max < min(N - 1, K)), "m_max 参数异常"
+
+        # 第一步： 对测试集进行投影操作
+
+        # 在均值中心化 和 自动窗口 之后 对 Xcal的列进行投影操作
+
+        normalization_factor = None
+        if autoscaling == 1:
+            normalization_factor = np.std(
+                Xcal, ddof=1, axis=0).reshape(1, -1)[0]
+        else:
+            normalization_factor = np.ones((1, K))[0]
+
+        Xcaln = np.empty((N, K))
+        for k in range(K):
+            x = Xcal[:, k]
+            Xcaln[:, k] = (x - np.mean(x)) / normalization_factor[k]
+
+        SEL = np.zeros((m_max, K))
+
+        # 进度条
+        with Bar('Projections :', max=K) as bar:
+            for k in range(K):
+                SEL[:, k] = self._projections_qr(Xcaln, k, m_max)
+                bar.next()
+
+        # 第二步： 进行评估
+
+        PRESS = float('inf') * np.ones((m_max + 1, K))
+
+        with Bar('Evaluation of variable subsets :', max=(K) * (m_max - m_min + 1)) as bar:
+            for k in range(K):
+                for m in range(m_min, m_max + 1):
+                    var_sel = SEL[:m, k].astype(np.int)
+                    _, e = self._validation(Xcal, ycal, var_sel, Xval, yval)
+                    PRESS[m, k] = e.T.dot(e)
+                    bar.next()
+
+        PRESSmin = np.min(PRESS, axis=0)
+        m_sel = np.argmin(PRESS, axis=0)
+        k_sel = np.argmin(PRESSmin)
+
+        # 第 k_sel波段为初始波段时最佳，波段数目为 m_sel（k_sel）
+        var_sel_phase2 = SEL[:m_sel[k_sel], k_sel].astype(np.int)
+
+        # 最后消去变量
+
+        # 第 3.1 步 计算相关指数
+        Xcal2 = np.hstack([np.ones((N, 1)), Xcal[:, var_sel_phase2]])
+        b = np.linalg.lstsq(Xcal2, ycal, rcond=None)[0]
+        std_deviation = np.std(Xcal2, ddof=1, axis=0)
+
+        relev = np.abs(b * std_deviation.T)
+        relev = relev[1:]
+
+        index_increasing_relev = np.argsort(relev, axis=0)
+        index_decreasing_relev = index_increasing_relev[::-1].reshape(1, -1)[0]
+
+        PRESS_scree = np.empty(len(var_sel_phase2))
+        yhat = e = None
+        for i in range(len(var_sel_phase2)):
+            var_sel = var_sel_phase2[index_decreasing_relev[:i + 1]]
+            _, e = self._validation(Xcal, ycal, var_sel, Xval, yval)
+
+            PRESS_scree[i] = e.T.dot(e)
+
+        RMSEP_scree = np.sqrt(PRESS_scree / len(e))
+
+        # 第 3.3： F-test 验证
+        PRESS_scree_min = np.min(PRESS_scree)
+        alpha = 0.25
+        dof = len(e)
+        fcrit = scipy.stats.f.ppf(1 - alpha, dof, dof)
+        PRESS_crit = PRESS_scree_min * fcrit
+
+        # 找到不明显比 PRESS_scree_min 大的最小变量
+
+        i_crit = np.min(np.nonzero(PRESS_scree < PRESS_crit))
+        i_crit = max(m_min, i_crit)
+
+        var_sel = var_sel_phase2[index_decreasing_relev[:i_crit]]
+
+        plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
+        plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
+        fig1 = plt.figure()
+        plt.xlabel('Number of variables included in the model')
+        plt.ylabel('RMSE')
+        plt.title('Final number of selected variables:{}(RMSE={})'.format(len(var_sel), RMSEP_scree[i_crit]))
+        plt.plot(RMSEP_scree)
+        plt.scatter(i_crit, RMSEP_scree[i_crit], marker='s', color='r')
+        plt.grid(True)
+
+        fig2 = plt.figure()
+        plt.plot(Xcal[0, :])
+        plt.scatter(var_sel, Xcal[0, var_sel], marker='s', color='r')
+        plt.legend(['First calibration object', 'Selected variables'])
+        plt.xlabel('Variable index')
+        plt.grid(True)
+        plt.show()
+
+        return var_sel, var_sel_phase2
+
+    def __repr__(self):
+        return "SPA()"
 
 
-#### 特技
+if __name__ == "__main__":
+    
+    data = pd.read_excel(r"all.xlsx")
+    x = data.drop(['names', 'labels'], axis=1)
+    y = data.loc[:, 'labels']
 
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+    absorbances = x.columns.values
+
+    from sklearn.model_selection import train_test_split
+    from sklearn.preprocessing import MinMaxScaler
+
+    Xcal, Xval, ycal, yval = train_test_split(x, y, test_size=0.4, random_state=0)
+
+    min_max_scaler = MinMaxScaler(feature_range=(-1, 1))  
+    Xcal = min_max_scaler.fit_transform(Xcal)
+    Xval = min_max_scaler.transform(Xval)
+    
+    var_sel, var_sel_phase2 = SPA().spa(
+        Xcal, ycal, m_min=2, m_max=50, Xval=Xval, yval=yval, autoscaling=1)
+    print(absorbances[var_sel])
+
+`````
+
+
+
+## 注意事项
+
+1. 光谱矩阵（m * n）==m行为样本，n列为波段==
+
+2. 进行建模前需要对光谱进行 建模集测试集分割 与 数据归一化 ，可先进行分割再归一，也可以先归一再分割，下边为分割再归一
+
+   ````python
+   from sklearn.model_selection import train_test_split
+   from sklearn.preprocessing import MinMaxScaler
+   
+   Xcal, Xval, ycal, yval = train_test_split(x, y, test_size=0.4, random_state=0)
+   
+   min_max_scaler = MinMaxScaler(feature_range=(-1, 1))  
+   Xcal = min_max_scaler.fit_transform(Xcal)
+   Xval = min_max_scaler.transform(Xval)
+   ````
+
+   
+
+
+
