@@ -11,6 +11,7 @@
 # pandas: pandas 0.25.3
 # numpy : numpy  1.16.2
 # scipy : scipy  1.4.1
+# progress:progress    1.5
 
 import pandas as pd
 import numpy as np
