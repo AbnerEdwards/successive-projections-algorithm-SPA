@@ -229,18 +229,8 @@ class SPA:
 
 
 if __name__ == "__main__":
-    # Xcal = scio.loadmat('Xcal.mat')['Pn_train'].astype(np.float64)
-    # Xval = scio.loadmat('Xval.mat')['Pn_test'].astype(np.float64)
-    # ycal = scio.loadmat('ycal.mat')['Tn_train'].astype(np.float64)
-    # yval = scio.loadmat('yval.mat')['Tn_test'].astype(np.float64)
-
-    # print(type(Xcal))
-
-    # var_sel, var_sel_phase2 = SPA().spa(
-    #     Xcal, ycal, m_min=2, m_max=50, Xval=Xval, yval=yval, autoscaling=1)
-
     data = pd.read_excel(r"F:\实验\data\all.xlsx")
-    x = data.drop(['names', 'labels', 'PH', '可溶性糖'], axis=1)
+    x = data.drop(['names', 'labels'], axis=1)
     y = data.loc[:, 'labels']
 
     absorbances = x.columns.values
@@ -248,22 +238,6 @@ if __name__ == "__main__":
     from sklearn.model_selection import train_test_split
     from sklearn.preprocessing import MinMaxScaler
 
-    # min_max_scaler = MinMaxScaler(feature_range=(-1,1))#这里feature_range根据需要自行设置，默认（0,1）
-
-    # x = min_max_scaler.fit_transform(x)
-    # Xcal = np.zeros((1,data.shape[1]))
-    # Xval = np.zeros((1,data.shape[1]))
-    # ycal = np.zeros((1,data.shape[1]))
-    # yval = np.zeros((1,data.shape[1]))
-    # for i in range(data.shape[0]):
-    #     if (i+1) % 4 == 0:
-    #         Xval = np.vstack([Xcal, x[i,1:]])
-    #         yval = np.vstack([yval, x[i,0]])
-    #     else:
-    #         Xcal = np.vstack([Xcal, x[i,1:]])
-    #         ycal = np.vstack([yval, x[i,0]])
-    # x = StandardScaler().fit_transform(x.T).T
-    # y = StandardScaler().fit_transform(y.reshape(1,-1))
 
     Xcal, Xval, ycal, yval = train_test_split(x, y, test_size=0.4, random_state=0)
 
@@ -271,13 +245,7 @@ if __name__ == "__main__":
 
     Xcal = min_max_scaler.fit_transform(Xcal)
     Xval = min_max_scaler.transform(Xval)
-    # var_sel, var_sel_phase2 = SPA().spa(
-    #     x_train, y_train, m_min=2, m_max=50, Xval=x_test, yval=y_test, autoscaling=1)
-
-    # Xcal = scio.loadmat('Xcalmat.mat')['Xcal'].astype(np.float64)
-    # Xval = scio.loadmat('Xvalmat.mat')['Xval'].astype(np.float64)
-    # ycal = scio.loadmat('ycalmat.mat')['ycal'].astype(np.float64)
-    # yval = scio.loadmat('yvalmat.mat')['yval'].astype(np.float64)
+   
     var_sel, var_sel_phase2 = SPA().spa(
         Xcal, ycal, m_min=2, m_max=50, Xval=Xval, yval=yval, autoscaling=1)
     print(absorbances[var_sel])
