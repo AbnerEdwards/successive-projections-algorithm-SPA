@@ -157,7 +157,7 @@ class SPA:
                 for m in range(m_min, m_max + 1):
                     var_sel = SEL[:m, k].astype(np.int)
                     _, e = self._validation(Xcal, ycal, var_sel, Xval, yval)
-                    PRESS[m, k] = e.T.dot(e)
+                    PRESS[m, k] = np.conj(e).T.dot(e)
                     bar.next()
 
         PRESSmin = np.min(PRESS, axis=0)
