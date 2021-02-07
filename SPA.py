@@ -18,7 +18,7 @@ import numpy as np
 from scipy.linalg import qr, inv, pinv
 import scipy.stats
 import scipy.io as scio
-from progress.bar import Bar
+# from progress.bar import Bar
 from matplotlib import pyplot as plt
 
 
@@ -126,7 +126,7 @@ class SPA:
 
         # 第一步： 对测试集进行投影操作
 
-        # 在均值中心化 和 自动窗口 之后 对 Xcal的列进行投影操作
+        # 
 
         normalization_factor = None
         if autoscaling == 1:
@@ -143,22 +143,23 @@ class SPA:
         SEL = np.zeros((m_max, K))
 
         # 进度条
-        with Bar('Projections :', max=K) as bar:
-            for k in range(K):
-                SEL[:, k] = self._projections_qr(Xcaln, k, m_max)
-                bar.next()
+        #with Bar('Projections :', max=K) as bar:
+        for k in range(K):
+            SEL[:, k] = self._projections_qr(Xcaln, k, m_max)
+        #        bar.next()
 
         # 第二步： 进行评估
 
         PRESS = float('inf') * np.ones((m_max + 1, K))
 
-        with Bar('Evaluation of variable subsets :', max=(K) * (m_max - m_min + 1)) as bar:
-            for k in range(K):
-                for m in range(m_min, m_max + 1):
-                    var_sel = SEL[:m, k].astype(np.int)
-                    _, e = self._validation(Xcal, ycal, var_sel, Xval, yval)
-                    PRESS[m, k] = np.conj(e).T.dot(e)
-                    bar.next()
+        #with Bar('Evaluation of variable subsets :', max=(K) * (m_max - m_min + 1)) as bar:
+        for k in range(K):
+            for m in range(m_min, m_max + 1):
+                var_sel = SEL[:m, k].astype(np.int)
+                _, e = self._validation(Xcal, ycal, var_sel, Xval, yval)
+                PRESS[m, k] = np.conj(e).T.dot(e)
+        
+        #            bar.next()
 
         PRESSmin = np.min(PRESS, axis=0)
         m_sel = np.argmin(PRESS, axis=0)
