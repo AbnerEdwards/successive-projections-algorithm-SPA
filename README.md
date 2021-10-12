@@ -30,11 +30,97 @@
 
 ​                                                              -------------------------摘自《光谱及成像技术在农业中的应用》P130
 
-## 使用示例
+## 快速使用
+
+### 1. 数据读入
+
+```python
+# 导入 pandas 读取数据
+import pandas as pd
+import numpy as np
+
+# 读取数据
+data = pd.read_csv("./data/peach_spectra_brix.csv")
+data[:5]
+```
+
+### 2. 数据分离
+
+```python
+# m * n 
+print("数据矩阵 data.shape：",data.shape)
+
+# 50个样本， 600个 波段 第一列是 桃子糖度值 需要分离开
+X = data.values[:,1:] 
+# 等同操作
+#X = data.drop(['Brix'], axis=1)
+
+y = data.values[:,0]
+# 等同操作
+# y = data.loc[:,'Brix'].values
+
+print(f"X.shape:{X.shape}, y.shape:{y.shape}")
+X,y
+```
+
+### 3. 导入SPA
+
+```python
+# 导入SPA包
+import SPA 
+
+# 导入spa对象
+spa = SPA.SPA()
+# 数据归一化
+from sklearn.preprocessing import MinMaxScaler
+min_max_scaler = MinMaxScaler(feature_range=(-1, 1))  # 这里feature_range根据需要自行设置，默认（0,1）
+
+X_ = min_max_scaler.fit_transform(X)
+
+print(X[1,:5])
+print(X_[1,:5])
+
+# 建模集测试集分割
+from sklearn.model_selection import train_test_split
+
+# 注意 X_ 分割 
+# 若存在 运行后出现 波段选择为 最小值 可适当调整 建模集与测试集比例 test_size 值 0.3 - 0.5
+Xcal, Xval, ycal, yval = train_test_split(X_, y, test_size=0.4, random_state=0)
+
+Xcal.shape,Xval.shape
+```
+
+### 4. 建模筛选
+
+```python
+# 建模筛选
+# m_max 默认为 50(Xcal样本大于52) ,如果 Xcal(m*n) m < 50 m_max=m-2
+var_sel, var_sel_phase2 = spa.spa(
+        Xcal, ycal, m_min=2, m_max=28,Xval=Xval, yval=yval, autoscaling=1)
+```
+
+### 5. 导出波段
+
+```python
+# 导出 筛选光谱波段
+# spa 返回的是 列号 并不是光谱数据
+# 获取 波段列表
+absorbances = data.columns.values[1:]
+print("波段(前5个)",absorbances[:5])
+
+# spa 筛选出的波段  以 test_size=0.3 为例
+print("spa 筛选出的波段(以 test_size=0.3 为例):",absorbances[var_sel])
+
+# 导出 筛选波段光谱数据
+X_select = X[:,var_sel]
+print("X_select.shape:",X_select.shape)
+```
+
+[示例&建模参考](https://gitee.com/aBugsLife/SPA/blob/master/SPA%E7%A4%BA%E4%BE%8B.ipynb)
+
+## 注意事项
 
 1. 光谱矩阵（m * n）**m行为样本，n列为波段** 
-
-	
 
 2. 进行建模前需要对光谱进行 建模集测试集分割 与 数据归一化 ，可先进行分割再归一，也可以先归一再分割，下边为分割再归一
 
